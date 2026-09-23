@@ -1,0 +1,40 @@
+# Generated files and local environments
+.venv/
+__pycache__/
+*.py[cod]
+build/
+outputs/
+.tools/
+.Xil/
+*.log
+*.jou
+*.rpt
+*.wdb
+*.vcd
+*.bit
+*.xsa
+*.elf
+*.dcp
+*.zip
+*.bin
+*.wav
+
+# Local experiment, test and agent material
+/tests/
+/sim/
+/hw/tb/
+/notes/
+/debug/
+/AGENTS.md
+/CLAUDE.md
+/.codex/
+/.claude/
+
+# Editor and machine configuration
+.vscode/
+.idea/
+.env
+.env.*
+*.local.*
+.DS_Store
+Thumbs.db

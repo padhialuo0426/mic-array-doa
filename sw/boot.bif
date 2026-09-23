@@ -1,0 +1,9 @@
+// Zynq-7000 FSBL loads all partitions and hands off to the FIRST PS app.
+// CPU0 then wakes CPU1 at the checked display.elf entry, 0x02000000.
+the_ROM_image:
+{
+    [bootloader] fsbl.elf
+    top.bit
+    app.elf
+    display.elf
+}
