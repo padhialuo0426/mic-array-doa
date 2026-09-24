@@ -23,6 +23,8 @@
 4. 接上 HDMI 显示器，给开发板上电。
 5. 用手机播放扫频音（生成方法见[播放扫频测试音](#播放扫频测试音)），屏幕上的雷达显示手机方向。
 
+没有 Vivado/Vitis 时，可以在 Linux 上用开源工具链完成第 2 步，见[用开源工具链构建 BOOT.BIN](docs/open-toolchain.md)。
+
 ## 接线
 
 整套系统需要连接四样东西：麦克风阵列、电源、HDMI 显示器，以及用于查看日志的串口（可选）。
@@ -70,11 +72,18 @@
 
 ## 构建
 
-构建在 Windows 上完成，依次生成 PL 比特流、两个 A9 裸机程序，再用 bootgen 打包成 `BOOT.BIN`。在作者的构建机上，一次完整构建约 6 分钟。
+构建依次生成 PL 比特流和两个 A9 裸机程序，再用 bootgen 打包成 `BOOT.BIN`。有两种方式，得到的 `BOOT.BIN` 功能相同：
+
+| 方式 | 平台 | 说明 |
+|---|---|---|
+| Vivado/Vitis | Windows | 下文步骤；一次完整构建约 6 分钟 |
+| 开源工具链 | Linux | 不需要安装 Vivado/Vitis，见[用开源工具链构建 BOOT.BIN](docs/open-toolchain.md)；一次完整构建约 2 分钟，已上板验证 |
+
+### 用 Vivado/Vitis 构建
 
 开始前，你需要：
 
-- Windows 上的 **Vivado 与 Vitis 2025.2**，其中含 bootgen 和 ARM 工具链。AMD/Xilinx 的工具、IP 和 BSP 不随源码分发。
+- Windows 上的 **Vivado 与 Vitis 2025.2**，其中含 bootgen 和 ARM 工具链。Vivado/Vitis 和 AMD/Xilinx IP 不随源码分发。
 - 一个全新的输出目录。软件阶段会在其中创建 Vitis 工作区；如果目录里已有 `vitis\`，脚本会拒绝继续。
 
 在仓库根目录运行：
@@ -139,7 +148,7 @@ AUTOSTART CPU1_READY: starting chirp DOA, LED and HDMI
 CHIRP_START fs=16276.041667 band=500:6000 pulse_ms=20 period_ms=300 q=stop mapping=verified_identity
 ```
 
-如果出现 `ERROR autostart blocked by capture selftest`，说明七路麦克风数据异常，程序会停在串口菜单，不进入测向。这时请检查 J11 的接线和阵列供电。
+如果出现 `ERROR autostart blocked by capture selftest`，说明七路麦克风数据异常，程序会停在串口菜单，不进入测向。这时检查 J11 的接线和阵列供电。
 
 ### 播放扫频测试音
 
@@ -163,7 +172,9 @@ chirp_train.wav: 60 s, 20 ms chirps 500-6000 Hz every 0.3 s
 CHIRP seq=681802 status=OK az=245 el=47 level_dbfs=-46.12 snr=43.8 quality=0.9773 gate_delta=2.00 latency_ms=152.7
 ```
 
-`status=OK` 表示结果通过了质量门限；其他状态（如 `MODEL_MISMATCH`、`AMBIGUOUS_ONSET`）表示该段被拒绝，此时屏幕和灯环不显示方向。静音、白噪声和持续单音不会得到 `status=OK` 的结果；拍手等其他宽带声音会被检出，但通常以 `MODEL_MISMATCH` 被拒绝。
+`status=OK` 表示结果通过了质量门限，屏幕和灯环随之显示方向。其他状态（如 `MODEL_MISMATCH`、`AMBIGUOUS_ONSET`）表示该段被拒绝，不显示方向。
+
+只有扫频音能得到 `status=OK`。静音、白噪声和持续单音不会被检出；拍手等其他宽带声音会被检出，但通常以 `MODEL_MISMATCH` 被拒绝。
 
 ### 通过 JTAG 临时加载（可选）
 
@@ -202,8 +213,11 @@ CHIRP seq=681802 status=OK az=245 el=47 level_dbfs=-46.12 snr=43.8 quality=0.977
 | 目录 | 内容 |
 |---|---|
 | `hw/` | PL RTL、引脚约束、DDR 配置、Vivado 构建脚本及视频编码依赖 |
+| `hw/oss/` | 开源流程的顶层、Xilinx IP 的 Verilog 替代实现、约束与构建脚本 |
 | `sw/` | 双 Cortex-A9 裸机程序、算法、显示资源、Vitis 构建脚本与启动镜像描述 |
-| `scripts/` | Windows 构建入口，Linux 下的 JTAG 加载与采集工具 |
+| `sw/bsp/` | 开源流程使用的 embeddedsw BSP、驱动、FSBL 与链接脚本 |
+| `sw/qemu/` | 不接开发板、在 QEMU 中检查 SD 卡启动过程的脚本 |
+| `scripts/` | Windows 构建入口、开源 bootgen 编译脚本，Linux 下的 JTAG 加载与采集工具 |
 | `tools/` | 扫频测试音生成、显示资源生成；显示资源已生成为 C 头文件 |
 | `licenses/` | 第三方许可证与版权声明 |
 

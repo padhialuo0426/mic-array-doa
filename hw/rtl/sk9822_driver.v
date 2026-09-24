@@ -36,23 +36,38 @@ module sk9822_driver #(
     reg [3:0] wstrb;
     reg aw_pending,w_pending,request,request_blank;
     reg busy,expired,rejected,blank_pending;
+    // go/go_black: the refresh decision registered one cycle ahead, so the
+    // 480-bit parallel load is selected by flip-flops, not by request logic.
+    reg go,go_black;
+    reg last_bit; // registered bit_index==479
+    reg tick; // registered (divider==HALF_PERIOD-1): the 480-bit shift enable starts at a flip-flop
     reg [31:0] divider,age;
     reg [8:0] bit_index;
     reg [479:0] shift;
-    reg [479:0] frame;
+    reg [479:0] frame, frame_q; // frame_q: registered copy, cuts the 12-pixel clamp chain
     reg [4:0] brightness;
-    integer i,lit,j,b;
+    integer i,j,b;
+    // Pixel i is shown if it is nonblack and fewer than two earlier pixels are:
+    // any_before/two_before are pure boolean prefixes of valid[], no adders.
+    reg [11:0] valid, valid_q, any_before, two_before;
     localparam [479:0] BLACK_FRAME={32'b0,{12{32'he0000000}},64'b0};
     always @* begin
-        frame=BLACK_FRAME;lit=0;brightness=0;
+        for(i=0;i<12;i=i+1) valid[i]=pixels[i][28:24]!=0 && pixels[i][23:0]!=0;
+        any_before[0]=0; two_before[0]=0;
+        for(i=1;i<12;i=i+1) begin
+            any_before[i]=any_before[i-1] | valid_q[i-1];
+            two_before[i]=two_before[i-1] | (any_before[i-1] & valid_q[i-1]);
+        end
+        frame=BLACK_FRAME;brightness=0;
         for(i=0;i<12;i=i+1) begin
             brightness=pixels[i][28:24]>4 ? 5'd4 : pixels[i][28:24];
-            if(brightness!=0 && pixels[i][23:0]!=0 && lit<2) begin
-                frame[447-i*32 -: 32]={3'b111,brightness,pixels[i][23:0]};
-                lit=lit+1;
-            end
+            if(valid_q[i] && !two_before[i]) frame[447-i*32 -: 32]={3'b111,brightness,pixels[i][23:0]};
         end
     end
+    // Two register stages (valid_q, frame_q) keep the snapshot logic within
+    // 100 MHz in both flows. A refresh request follows the last pixel write by
+    // at least five bus cycles, so frame_q is still the snapshot when go loads it.
+    always @(posedge aclk) begin valid_q<=valid; frame_q<=frame; end
     assign led_da=busy ? shift[479] : 1'b0;
     assign s_axi_awready=!aw_pending && !s_axi_bvalid;
     assign s_axi_wready=!w_pending && !s_axi_bvalid;
@@ -94,28 +109,32 @@ module sk9822_driver #(
     end
     always @(posedge aclk) begin
         if(!aresetn) begin
-            busy<=0;expired<=1;rejected<=0;blank_pending<=1;
-            divider<=0;age<=0;bit_index<=0;shift<=BLACK_FRAME;led_ck<=0;
+            busy<=0;expired<=1;rejected<=0;blank_pending<=1;go<=0;go_black<=1;last_bit<=0;
+            divider<=0;tick<=(HALF_PERIOD==1);age<=0;bit_index<=0;shift<=BLACK_FRAME;led_ck<=0;
         end else begin
             if(!expired) begin
                 if(age>=WATCHDOG_CYCLES-1) begin expired<=1;blank_pending<=1;end
                 else age<=age+1'b1;
             end
-            if(request && busy) rejected<=1;
-            if(!busy && (request || blank_pending)) begin
-                shift<=(!request || request_blank) ? BLACK_FRAME : frame;
-                busy<=1;divider<=0;bit_index<=0;led_ck<=0;blank_pending<=0;
+            go<=0;
+            if(request && (busy || go)) rejected<=1;
+            if(!busy && !go && (request || blank_pending)) begin
+                go<=1;go_black<=!request || request_blank;blank_pending<=0;
                 if(request) begin age<=0;expired<=0;rejected<=0;end
+            end
+            if(go) begin
+                shift<=go_black ? BLACK_FRAME : frame_q;
+                busy<=1;divider<=0;tick<=(HALF_PERIOD==1);bit_index<=0;last_bit<=0;led_ck<=0;
             end else if(busy) begin
-                if(divider==HALF_PERIOD-1) begin
-                    divider<=0;
+                if(tick) begin
+                    divider<=0;tick<=(HALF_PERIOD==1);
                     if(!led_ck) led_ck<=1;
                     else begin
                         led_ck<=0;
-                        if(bit_index==479) busy<=0;
-                        else begin shift<={shift[478:0],1'b0};bit_index<=bit_index+1'b1;end
+                        if(last_bit) busy<=0;
+                        else begin shift<={shift[478:0],1'b0};bit_index<=bit_index+1'b1;last_bit<=bit_index==478;end
                     end
-                end else divider<=divider+1'b1;
+                end else begin divider<=divider+1'b1;tick<=(divider+1'b1==HALF_PERIOD-1);end
             end
         end
     end
