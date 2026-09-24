@@ -5,7 +5,15 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd); out=$root/build/oss; mkdir -p "$out"
 part=xc7z020clg400-2
 image=${OPENXC7_IMAGE:-regymm/openxc7:latest}
-docker run --rm -e SEED="${SEED:-1}" -v "$root":/work -w /work/build/oss "$image" bash -lc "
+# Linux runs the image with Docker. macOS runs it with Apple's container tool:
+# the image is x86-64 only, so under Rosetta, and with more memory than the
+# 1 GB default, which chipdb export and nextpnr exceed.
+if [ "$(uname)" = Darwin ]; then
+  run=(container run --platform linux/amd64 --rosetta -m 8G -c "$(sysctl -n hw.ncpu)")
+else
+  run=(docker run)
+fi
+"${run[@]}" --rm -e SEED="${SEED:-1}" -v "$root":/work -w /work/build/oss "$image" bash -lc "
 set -e
 if [ ! -f chipdb-$part.bin ]; then
   (cd /nextpnr-xilinx/xilinx && python3 python/bbaexport.py --device $part --bba /work/build/oss/chipdb.bba)

@@ -23,7 +23,7 @@
 4. 接上 HDMI 显示器，给开发板上电。
 5. 用手机播放扫频音（生成方法见[播放扫频测试音](#播放扫频测试音)），屏幕上的雷达显示手机方向。
 
-没有 Vivado/Vitis 时，可以在 Linux 上用开源工具链完成第 2 步，见[用开源工具链构建 BOOT.BIN](docs/open-toolchain.md)。
+没有 Vivado/Vitis 时，可以在 Linux 或 macOS 上用开源工具链完成第 2 步，见[用开源工具链构建 BOOT.BIN](docs/open-toolchain.md)。
 
 ## 接线
 
@@ -77,7 +77,7 @@
 | 方式 | 平台 | 说明 |
 |---|---|---|
 | Vivado/Vitis | Windows | 下文步骤；一次完整构建约 6 分钟 |
-| 开源工具链 | Linux | 不需要安装 Vivado/Vitis，见[用开源工具链构建 BOOT.BIN](docs/open-toolchain.md)；一次完整构建约 2 分钟，已上板验证 |
+| 开源工具链 | Linux、macOS | 不需要安装 Vivado/Vitis，见[用开源工具链构建 BOOT.BIN](docs/open-toolchain.md) |
 
 ### 用 Vivado/Vitis 构建
 

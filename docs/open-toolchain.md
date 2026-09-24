@@ -1,14 +1,12 @@
 # 用开源工具链构建 BOOT.BIN
 
-本文介绍如何在 Linux 上只用开源工具构建本项目的 `BOOT.BIN`，全程不需要安装 Vivado 或 Vitis。按本文操作，你会依次得到 PL 比特流、两个 A9 程序和 FSBL，再把它们打包成可以直接写入 TF 卡的 `BOOT.BIN`。环境准备好之后，一次完整构建约 2 分钟。
-
-> **状态：** 开源工具链和 `hw/oss/` 中的 PL 设计已在 AX7020 上验证：从 TF 卡冷启动后，采集、测向、LED 灯环和 HDMI 画面都正常。本仓库按本文构建的 `BOOT.BIN` 也已从 TF 卡冷启动验证过，chirp 测向结果正常。
+本文介绍如何在 Linux 或 macOS 上只用开源工具构建本项目的 `BOOT.BIN`，全程不需要安装 Vivado 或 Vitis。按本文操作，你会依次得到 PL 比特流、两个 A9 程序和 FSBL，再把它们打包成可以直接写入 TF 卡的 `BOOT.BIN`。环境准备好之后，一次完整构建在 Linux 上约 2 分钟，在 macOS 上约 4 分钟。
 
 ## 各步骤用到的工具
 
 | 步骤 | Vivado/Vitis 流程 | 开源流程 |
 |---|---|---|
-| PL 综合、布局布线、比特流 | Vivado | [openXC7](https://github.com/openXC7) Docker 镜像：yosys、nextpnr-xilinx、prjxray |
+| PL 综合、布局布线、比特流 | Vivado | [openXC7](https://github.com/openXC7) 容器镜像：yosys、nextpnr-xilinx、prjxray |
 | PL 中的 Xilinx IP（AXI 互连、AXI DMA、FIFO、时钟、rgb2dvi） | Vivado IP 与 Digilent VHDL | `hw/oss/` 下的 Verilog 替代实现，寄存器与固件用到的部分兼容 |
 | BSP、驱动、FSBL | Vitis 根据 `top.xsa` 生成 | `sw/bsp/` 中随仓库附带的 [embeddedsw](https://github.com/Xilinx/embeddedsw) 源码与手写配置 |
 | A9 编译器 | Vitis 自带的 arm-none-eabi-gcc | 系统包管理器安装的 arm-none-eabi-gcc 与 newlib |
@@ -17,6 +15,10 @@
 两个流程共用 `hw/rtl/` 下的自有 RTL 和 `sw/` 下的全部应用源码，所以测向算法和显示界面完全相同。
 
 ## 开始前
+
+Linux 和 macOS 上的构建命令完全相同，只是需要安装的软件不同。按你的系统准备好环境，再进行[构建](#构建)。
+
+### Linux
 
 你需要一台 x86-64 Linux 电脑，装有以下软件：
 
@@ -28,7 +30,7 @@
 | Python 3 | 打包前检查 ELF | `python` | `python3` |
 | qemu-system-arm、mtools（可选） | 不接开发板检查启动过程 | `qemu-system-arm mtools` | `qemu-system-arm mtools` |
 
-本文在 arm-none-eabi-gcc 16.2、Docker 29.8 上验证过。你的用户需要有权限运行 `docker`。
+本节在 arm-none-eabi-gcc 16.2、Docker 29.8 上验证过。你的用户需要有权限运行 `docker`。
 
 然后拉取 openXC7 镜像：
 
@@ -36,11 +38,46 @@
 docker pull regymm/openxc7:latest
 ```
 
+### macOS
+
+你需要一台 Apple 芯片的 Mac，装有以下软件：
+
+| 软件 | 用途 | 安装方式 |
+|---|---|---|
+| Xcode 命令行工具 | 编译 bootgen（clang、git、make），打包前检查 ELF（Python 3） | `xcode-select --install` |
+| Apple container 与 Rosetta | 运行 openXC7 镜像 | 从 [container 发布页](https://github.com/apple/container/releases)安装后运行 `container system start`；Rosetta 用 `softwareupdate --install-rosetta --agree-to-license` 安装 |
+| Homebrew 的 OpenSSL | 编译 bootgen | `brew install openssl@3` |
+| [Arm GNU Toolchain](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads)（含 newlib） | 编译 A9 程序和 FSBL | `brew install --cask gcc-arm-embedded` |
+
+注意 Homebrew 另有一个同名的 formula `arm-none-eabi-gcc`，它只有编译器，不含 newlib，无法链接本项目的程序，请安装上表中的 cask。安装后，运行以下两条命令检查 `PATH` 中的 `arm-none-eabi-gcc` 是否可用：
+
+```bash
+arm-none-eabi-gcc -mcpu=cortex-a9 -mfpu=vfpv3 -mfloat-abi=hard -print-multi-directory
+arm-none-eabi-gcc -mcpu=cortex-a9 -mfpu=vfpv3 -mfloat-abi=hard -print-file-name=libc.a
+```
+
+第一条应输出 `thumb/v7-a+fp/hard`，而不是 `.`；第二条应输出 `libc.a` 的完整路径，而不是只有 `libc.a` 这个文件名。
+
+本节在 macOS 27.0、Apple container 1.4.1、Arm GNU Toolchain 15.3.Rel1 上验证过，系统自带的 GNU Make 3.81 和 Python 3.9 即可使用。
+
+然后拉取 x86-64 版的 openXC7 镜像：
+
+```bash
+container image pull --platform linux/amd64 regymm/openxc7:latest
+```
+
+不要换用 `regymm/openxc7-arm` 镜像。它的 nextpnr-xilinx 版本较旧，遇到 `oss.xdc` 中的 `DRIVE` 属性会崩溃，也不支持 HDMI 输出所需的 OSERDESE2 主从级联。
+
+构建脚本会自动识别 macOS：
+
+- `hw/oss/build.sh` 改用 Apple 的 [container](https://github.com/apple/container) 运行 openXC7 镜像。这个镜像只有 x86-64 版本，脚本通过 Rosetta 运行它，并给容器分配 8 GB 内存（container 默认只给 1 GB，生成器件数据库和布局布线都不够用）。
+- `scripts/build_bootgen.sh` 使用 Homebrew 安装的 OpenSSL，并补上 macOS 缺少的 `malloc.h`，bootgen 的源码不用改。
+
 ## 构建
 
 以下命令都在仓库根目录运行，所有输出都放在 `build/` 下。
 
-1. 编译开源 bootgen（只需一次；8 核电脑上约 10 秒）：
+1. 编译开源 bootgen（只需一次；8 核 Linux 电脑或 Apple M5 上都约 10 秒）：
 
    ```bash
    scripts/build_bootgen.sh
@@ -68,7 +105,7 @@ docker pull regymm/openxc7:latest
    hw/oss/build.sh
    ```
 
-   第一次运行时，脚本会先从 prjxray 数据库生成约 130 MB 的器件数据库 `build/oss/chipdb-xc7z020clg400-2.bin`，首次构建共约 2 分钟；之后每次约 75 秒。成功时输出两个时钟的时序结果和比特流文件：
+   第一次运行时，脚本会先从 prjxray 数据库生成约 130 MB 的器件数据库 `build/oss/chipdb-xc7z020clg400-2.bin`，首次构建在 Linux 上共约 2 分钟，之后每次约 75 秒；在 Apple M5 上首次约 4 分钟，之后每次约 100 秒。成功时输出两个时钟的时序结果和比特流文件：
 
    ```text
    Info: Max frequency for clock 'aclk': 111.31 MHz (PASS at 100.00 MHz)
@@ -76,7 +113,7 @@ docker pull regymm/openxc7:latest
    -rw-r--r-- 1 user user 4045665 ... <仓库路径>/build/oss/top.bit
    ```
 
-   频率数值随代码和布局种子变化，两行都显示 `PASS` 即可。
+   频率数值随代码和布局种子变化，两行都显示 `PASS` 即可。同一份源码在 Linux 和 macOS 上得到的时序结果相同。
 
    其中的 `fasm` 包提示（关于 antlr 解析器）只影响速度，可以忽略。
 
@@ -100,6 +137,8 @@ docker pull regymm/openxc7:latest
    ```text
    PASS: SD boot reaches CPU0 (SD mode, autostart, L2 off); stops at the PL check as expected
    ```
+
+   这一步尚未在 macOS 上验证。
 
 ## 只改软件时重新打包
 
